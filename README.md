@@ -34,6 +34,8 @@ On first start, open the public URL and create your account with your name, emai
 | `MCPME_DATA_DIR` | `./data` (`/data` in Docker) | Embedded database and generated key. |
 | `PORT` | `3000` | |
 
+`GET /api/health` needs no sign-in and returns `200 {"status":"ok"}`, or `503` when the database is unreachable. The image's Docker healthcheck uses it; point uptime monitors at it too.
+
 stdio servers run inside the MCPME container. The image includes `node`/`npx`, `python3` and `uv`/`uvx`.
 
 ### Coolify

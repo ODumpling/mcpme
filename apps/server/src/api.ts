@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import express, { type NextFunction, type Request, type Response, type Router } from 'express';
 import { z } from 'zod';
 import type { Audit } from './audit.ts';
@@ -33,6 +33,15 @@ export function apiRouter(deps: { db: Db; owners: Owners; registry: Registry; au
 
   const wrap = (fn: (req: Authed, res: Response) => Promise<unknown>) => (req: Request, res: Response, next: NextFunction) =>
     fn(req as Authed, res).catch(next);
+
+  // No sign-in needed, for container health checks and uptime monitors. Reveals nothing about the servers behind MCPME.
+  api.get('/health', wrap(async (_req, res) => {
+    const database = await db.execute(sql`select 1`).then(
+      () => 'ok' as const,
+      () => 'error' as const,
+    );
+    res.set('Cache-Control', 'no-store').status(database === 'ok' ? 200 : 503).json({ status: database, database, uptimeSeconds: Math.round(process.uptime()) });
+  }));
 
   api.get('/state', wrap(async (req, res) => {
     const user = await owners.sessionUser(req);
