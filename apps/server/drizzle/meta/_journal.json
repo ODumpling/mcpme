@@ -8,6 +8,13 @@
       "when": 1793304216735,
       "tag": "0000_lush_expediter",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793307696638,
+      "tag": "0001_user_name",
+      "breakpoints": true
     }
   ]
 }

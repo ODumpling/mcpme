@@ -56,7 +56,7 @@ function Shell({ state, onSignOut }: { state: AppState; onSignOut: () => void })
           ))}
         </nav>
         <div className="topbar-end">
-          <span className="muted">{state.user!.email}</span>
+          <span className="muted">{state.user!.name || state.user!.email}</span>
           <button
             type="button"
             className="btn btn-ghost btn-small"

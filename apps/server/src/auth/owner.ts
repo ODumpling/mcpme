@@ -1,4 +1,4 @@
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { timingSafeEqual } from 'node:crypto';
 import { and, eq, gt } from 'drizzle-orm';
 import type { Request, Response } from 'express';
 import type { Db } from '../db/index.ts';
@@ -10,6 +10,7 @@ const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export interface User {
   id: string;
+  name: string;
   email: string;
 }
 
@@ -20,9 +21,6 @@ export interface User {
 export class Owners {
   private readonly db: Db;
   private readonly secureCookies: boolean;
-  /** One-time code printed to the logs that must be entered to claim a fresh instance. */
-  readonly setupCode = randomBytes(6).toString('hex');
-
   constructor(db: Db, secureCookies: boolean) {
     this.db = db;
     this.secureCookies = secureCookies;
@@ -33,21 +31,21 @@ export class Owners {
     return Boolean(row);
   }
 
-  async setup(email: string, password: string, setupCode: string): Promise<User> {
+  async setup(name: string, email: string, password: string): Promise<User> {
     if (await this.hasOwner()) throw new AuthError('MCPME is already set up');
-    if (!safeEqual(setupCode.trim(), this.setupCode)) throw new AuthError('Wrong setup code');
+    if (!name.trim()) throw new AuthError('Enter your name');
     if (password.length < 8) throw new AuthError('Password must be at least 8 characters');
     const [user] = await this.db
       .insert(users)
-      .values({ email: email.trim().toLowerCase(), passwordHash: await hashPassword(password) })
-      .returning({ id: users.id, email: users.email });
+      .values({ name: name.trim(), email: email.trim().toLowerCase(), passwordHash: await hashPassword(password) })
+      .returning({ id: users.id, name: users.name, email: users.email });
     return user;
   }
 
   async verifyCredentials(email: string, password: string): Promise<User> {
     const [user] = await this.db.select().from(users).where(eq(users.email, email.trim().toLowerCase()));
     if (!user || !(await verifyPassword(password, user.passwordHash))) throw new AuthError('Wrong email or password');
-    return { id: user.id, email: user.email };
+    return { id: user.id, name: user.name, email: user.email };
   }
 
   async startSession(res: Response, user: User): Promise<string> {
@@ -78,7 +76,7 @@ export class Owners {
     if (!token) return undefined;
     const tokenHash = hashToken(token);
     const [row] = await this.db
-      .select({ id: users.id, email: users.email })
+      .select({ id: users.id, name: users.name, email: users.email })
       .from(sessions)
       .innerJoin(users, eq(users.id, sessions.userId))
       .where(and(eq(sessions.tokenHash, tokenHash), gt(sessions.expiresAt, new Date())));

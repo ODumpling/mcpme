@@ -67,12 +67,12 @@ export function apiRouter(deps: { db: Db; owners: Owners; registry: Registry; au
 
   api.get('/state', wrap(async (req, res) => {
     const user = await owners.sessionUser(req);
-    res.json({ setupRequired: !(await owners.hasOwner()), user: user ? { id: user.id, email: user.email } : null, mcpUrl: deps.mcpUrl.href });
+    res.json({ setupRequired: !(await owners.hasOwner()), user: user ? { id: user.id, name: user.name, email: user.email } : null, mcpUrl: deps.mcpUrl.href });
   }));
 
   api.post('/setup', wrap(async (req, res) => {
-    const body = z.object({ email: z.string().email(), password: z.string(), setupCode: z.string() }).parse(req.body);
-    const user = await owners.setup(body.email, body.password, body.setupCode);
+    const body = z.object({ name: z.string(), email: z.string().email(), password: z.string() }).parse(req.body);
+    const user = await owners.setup(body.name, body.email, body.password);
     await owners.startSession(res, user);
     res.json({ user });
   }));

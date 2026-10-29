@@ -137,15 +137,16 @@ describe('MCPME login for MCP clients', () => {
 });
 
 describe('first-run setup', () => {
-  it('needs the setup code from the logs and only works once', async () => {
+  it('needs a name and only works once', async () => {
     const app = await createApp(
       { publicUrl: new URL('http://localhost:1'), port: 0, dataDir: mkdtempSync(join(tmpdir(), 'mcpme-')), secretKey: randomBytes(32) },
       { inMemoryDb: true },
     );
     try {
-      await expect(app.owners.setup('a@b.co', 'longenough', 'wrong')).rejects.toThrow('Wrong setup code');
-      await app.owners.setup('a@b.co', 'longenough', app.owners.setupCode);
-      await expect(app.owners.setup('c@d.co', 'longenough', app.owners.setupCode)).rejects.toThrow('already set up');
+      await expect(app.owners.setup(' ', 'a@b.co', 'longenough')).rejects.toThrow('Enter your name');
+      const user = await app.owners.setup('Ada', 'a@b.co', 'longenough');
+      expect(user).toMatchObject({ name: 'Ada', email: 'a@b.co' });
+      await expect(app.owners.setup('Cy', 'c@d.co', 'longenough')).rejects.toThrow('already set up');
     } finally {
       await app.close();
     }
