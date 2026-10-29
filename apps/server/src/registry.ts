@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { and, eq } from 'drizzle-orm';
-import { auth } from '@modelcontextprotocol/sdk/client/auth.js';
+import { auth, extractWWWAuthenticateParams } from '@modelcontextprotocol/sdk/client/auth.js';
 import type { Db } from './db/index.ts';
 import { itemToggles, serverOAuth, servers, type ItemKind } from './db/schema.ts';
 import type { Vault } from './crypto.ts';
@@ -145,7 +145,8 @@ export class Registry extends EventEmitter<{ change: [] }> {
     const up = this.upstreams.get(id);
     if (!up?.config.url) throw new Error('Only HTTP/SSE servers use OAuth');
     const provider = this.oauthProvider(id, true);
-    const result = await auth(provider, { serverUrl: up.config.url });
+    const challenge = await authChallenge(up.config.transport, up.config.url, up.config.headers);
+    const result = await auth(provider, { serverUrl: up.config.url, ...challenge });
     if (result === 'AUTHORIZED') {
       await this.reconnect(id);
       return undefined;
@@ -224,5 +225,28 @@ export class Registry extends EventEmitter<{ change: [] }> {
   async close(): Promise<void> {
     clearTimeout(this.changeTimer);
     await Promise.all(this.all().map((u) => u.close()));
+  }
+}
+
+/**
+ * Asks the server for its 401 challenge, which may point at protected-resource
+ * metadata somewhere other than the well-known default, and name the scopes.
+ */
+async function authChallenge(transport: string, url: string, headers: Record<string, string>): Promise<{ resourceMetadataUrl?: URL; scope?: string }> {
+  try {
+    const res =
+      transport === 'sse'
+        ? await fetch(url, { headers: { ...headers, accept: 'text/event-stream' } })
+        : await fetch(url, {
+            method: 'POST',
+            headers: { ...headers, 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+            body: JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'initialize', params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'mcpme', version: '0.1.0' } } }),
+          });
+    void res.body?.cancel();
+    if (res.status !== 401) return {};
+    const { resourceMetadataUrl, scope } = extractWWWAuthenticateParams(res);
+    return { resourceMetadataUrl, scope };
+  } catch {
+    return {};
   }
 }

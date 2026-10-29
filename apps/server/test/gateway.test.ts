@@ -36,7 +36,7 @@ describe('gateway', () => {
   it('combines tools from every server under namespaced names', async () => {
     const client = await h.mcpClient();
     const names = (await client.listTools()).tools.map((t) => t.name).sort();
-    expect(names).toEqual(['alpha__delete_everything', 'alpha__echo', 'keyed__delete_everything', 'keyed__echo', 'local__add_tool', 'local__whoami']);
+    expect(names).toEqual(['alpha__delete_everything', 'alpha__echo', 'alpha__link', 'keyed__delete_everything', 'keyed__echo', 'keyed__link', 'local__add_tool', 'local__whoami']);
   });
 
   it('forwards tool calls to the right server, with stored headers and env', async () => {
@@ -68,6 +68,20 @@ describe('gateway', () => {
     const templates = await client.listResourceTemplates();
     expect(templates.resourceTemplates.map((t) => t.uriTemplate)).toContain('mcpme://alpha/memo://items/{id}');
     expect(await client.readResource({ uri: 'mcpme://alpha/memo://items/7' })).toMatchObject({ contents: [{ text: 'item 7' }] });
+  });
+
+  it('rewrites resource links in tool results so they can be read back', async () => {
+    const client = await h.mcpClient();
+    const result = await client.callTool({ name: 'alpha__link', arguments: {} });
+    expect(result.content).toEqual([{ type: 'resource_link', uri: 'mcpme://alpha/memo://one', name: 'memo' }]);
+    expect(await client.readResource({ uri: 'mcpme://alpha/memo://one' })).toMatchObject({ contents: [{ text: 'memo one' }] });
+  });
+
+  it('honours a saved resource switch even for URIs the server no longer lists', async () => {
+    const client = await h.mcpClient();
+    expect(await client.readResource({ uri: 'mcpme://alpha/memo://items/9' })).toMatchObject({ contents: [{ text: 'item 9' }] });
+    await h.api(`/api/servers/${ids.alpha}/items`, { method: 'PUT', body: { items: [{ kind: 'resource', name: 'memo://items/9', enabled: false }] } });
+    await expect(client.readResource({ uri: 'mcpme://alpha/memo://items/9' })).rejects.toThrow(/Unknown resource/);
   });
 
   it('hides switched-off tools and blocks calls before they reach the server', async () => {

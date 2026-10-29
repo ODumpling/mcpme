@@ -46,6 +46,9 @@ describe('upstream OAuth: sign in once, every client gets access', () => {
     expect(start.status).toBe(302);
     const upstreamAuthorize = new URL(start.headers.get('location')!);
     expect(upstreamAuthorize.origin).toBe(new URL(secure.url).origin);
+    // Discovery followed the 401 challenge to the custom metadata URL and asked for its scope.
+    expect(secure.oauth.metadataHits).toBeGreaterThan(0);
+    expect(upstreamAuthorize.searchParams.get('scope')).toBe('notes:read');
     // ...which (auto-approving) sends them back to MCPME's callback.
     const approved = await fetch(upstreamAuthorize, { redirect: 'manual' });
     const callback = new URL(approved.headers.get('location')!);
@@ -73,6 +76,20 @@ describe('upstream OAuth: sign in once, every client gets access', () => {
     expect(await client.callTool({ name: 'secure__echo', arguments: { text: 'after expiry' } })).toMatchObject({ content: [{ text: 'echo: after expiry' }] });
     expect(secure.oauth.refreshed).toBe(1);
     expect(secure.oauth.issued).toBe(1);
+  });
+
+  it('asks for sign-in again when the stored credential stops working', async () => {
+    const client = await h.mcpClient();
+    let notified = 0;
+    client.setNotificationHandler(ToolListChangedNotificationSchema, () => void notified++);
+    expect((await client.listTools()).tools.map((t) => t.name)).toContain('secure__echo');
+    secure.oauth.revokeAll();
+    const result = await client.callTool({ name: 'secure__echo', arguments: { text: 'x' } });
+    expect(result.isError).toBe(true);
+    expect((result.content as any)[0].text).toContain(`${h.base}/connect/secure`);
+    await waitFor(() => notified > 0);
+    expect((await client.listTools()).tools.map((t) => t.name)).toEqual(['secure__authorize']);
+    expect((await h.api(`/api/servers/${serverId}`)).body.server.status).toBe('needs_auth');
   });
 
   it('can forget the credential', async () => {

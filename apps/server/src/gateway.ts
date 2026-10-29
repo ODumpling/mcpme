@@ -238,9 +238,20 @@ export class Gateway {
           if (err instanceof UnauthorizedError) return needsAuthResult(up);
           return { isError: true, content: [{ type: 'text', text: errorMessage(err) }] };
         }
-        return (await client.callTool({ name, arguments: req.params.arguments }, CallToolResultSchema, {
-          timeout: CALL_TIMEOUT_MS,
-        })) as CallToolResult;
+        let result: CallToolResult;
+        try {
+          result = (await client.callTool({ name, arguments: req.params.arguments }, CallToolResultSchema, {
+            timeout: CALL_TIMEOUT_MS,
+          })) as CallToolResult;
+        } catch (err) {
+          // Stored credentials stopped working (revoked, refresh failed): ask for sign-in again.
+          if (err instanceof UnauthorizedError) {
+            up.markNeedsAuth();
+            return needsAuthResult(up);
+          }
+          throw err;
+        }
+        return { ...result, content: result.content.map((c) => wrapContentUris(up.config.slug, c)) };
       });
     });
 
@@ -258,7 +269,8 @@ export class Gateway {
       return this.timed(userId, target?.up, 'prompts/get', req.params.name, async () => {
         if (!target || !this.registry.isEnabled(target.up, 'prompt', target.name)) throw new NotExposedError(`Unknown prompt: ${req.params.name}`);
         const client = await target.up.connect();
-        return client.getPrompt({ name: target.name, arguments: req.params.arguments });
+        const result = await client.getPrompt({ name: target.name, arguments: req.params.arguments });
+        return { ...result, messages: result.messages.map((m) => ({ ...m, content: wrapContentUris(target.up.config.slug, m.content) })) };
       });
     });
 
@@ -296,9 +308,11 @@ export class Gateway {
     return server;
   }
 
-  /** A listed resource uses its own switch; otherwise the first matching template's; otherwise the server default. */
+  /** A saved or listed resource uses its own switch; otherwise the first matching template's; otherwise the server default. */
   private resourceReadable(up: Upstream, uri: string): boolean {
-    if (up.lists.resources.some((r) => r.uri === uri)) return this.registry.isEnabled(up, 'resource', uri);
+    if (this.registry.hasToggle(up, 'resource', uri) || up.lists.resources.some((r) => r.uri === uri)) {
+      return this.registry.isEnabled(up, 'resource', uri);
+    }
     const template = up.lists.resourceTemplates.find((t) => {
       try {
         return new UriTemplate(t.uriTemplate).match(uri) !== null;
@@ -309,6 +323,14 @@ export class Gateway {
     if (template) return this.registry.isEnabled(up, 'resource_template', template.uriTemplate);
     return up.config.newItemsEnabled;
   }
+}
+
+/** Rewrites resource URIs inside tool/prompt content so clients can read them back through MCPME. */
+function wrapContentUris<T extends { type: string }>(slug: string, content: T): T {
+  const c = content as T & { uri?: string; resource?: { uri: string } };
+  if (c.type === 'resource_link' && c.uri) return { ...c, uri: wrapUri(slug, c.uri) };
+  if (c.type === 'resource' && c.resource?.uri) return { ...c, resource: { ...c.resource, uri: wrapUri(slug, c.resource.uri) } };
+  return content;
 }
 
 /** A request for something that is switched off or doesn't exist. Never reaches the upstream. */

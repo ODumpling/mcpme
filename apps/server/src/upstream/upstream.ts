@@ -163,6 +163,17 @@ export class Upstream {
     return this.lists;
   }
 
+  /** Credentials stopped working mid-session: drop the connection and wait for a new sign-in. */
+  markNeedsAuth(): void {
+    const client = this.client;
+    this.client = undefined;
+    void client?.close().catch(() => {});
+    this.status = 'needs_auth';
+    this.lastError = 'Needs authorization';
+    this.lists = EMPTY;
+    this.onChange();
+  }
+
   async close(): Promise<void> {
     this.closed = true;
     const client = this.client;

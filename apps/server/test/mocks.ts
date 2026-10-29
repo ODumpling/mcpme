@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { getOAuthProtectedResourceMetadataUrl, mcpAuthRouter } from '@modelcontextprotocol/sdk/server/auth/router.js';
+import { mcpAuthRouter } from '@modelcontextprotocol/sdk/server/auth/router.js';
 import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
 import type { OAuthServerProvider } from '@modelcontextprotocol/sdk/server/auth/provider.js';
 import type { OAuthClientInformationFull } from '@modelcontextprotocol/sdk/shared/auth.js';
@@ -16,7 +16,7 @@ export interface MockUpstream {
   url: string;
   calls: { tool: string; args: unknown; headers: Record<string, unknown> }[];
   /** OAuth stats when started with `oauth: true`. */
-  oauth: { issued: number; refreshed: number; expireAll(): void };
+  oauth: { issued: number; refreshed: number; metadataHits: number; expireAll(): void; revokeAll(): void };
   close(): Promise<void>;
 }
 
@@ -30,6 +30,9 @@ function buildMcp(calls: MockUpstream['calls'], headers: () => Record<string, un
     calls.push({ tool: 'delete_everything', args: {}, headers: headers() });
     return { content: [{ type: 'text', text: 'deleted' }] };
   });
+  mcp.registerTool('link', { description: 'Returns a resource link' }, async () => ({
+    content: [{ type: 'resource_link', uri: 'memo://one', name: 'memo' }],
+  }));
   mcp.registerPrompt('greet', { description: 'Greets', argsSchema: { who: z.string() } }, ({ who }) => ({
     messages: [{ role: 'user', content: { type: 'text', text: `Hello ${who}` } }],
   }));
@@ -54,9 +57,10 @@ async function listen(app: express.Express): Promise<{ server: HttpServer; url: 
  * server that approves every authorization request immediately.
  */
 export async function startMockUpstream(opts: { oauth?: boolean; requireHeader?: [string, string] } = {}): Promise<MockUpstream> {
+  // With oauth, protected-resource metadata lives at a custom path that only the 401 challenge reveals.
   const calls: MockUpstream['calls'] = [];
   const app = express();
-  const stats = { issued: 0, refreshed: 0 };
+  const stats = { issued: 0, refreshed: 0, metadataHits: 0 };
   const tokens = new Map<string, number>(); // access token -> expiresAt (s)
   const refreshTokens = new Set<string>();
   const codes = new Map<string, { challenge: string; redirectUri: string }>();
@@ -99,7 +103,7 @@ export async function startMockUpstream(opts: { oauth?: boolean; requireHeader?:
     async verifyAccessToken(token) {
       const exp = tokens.get(token);
       if (exp === undefined) throw new InvalidTokenError('unknown token');
-      return { token, clientId: 'x', scopes: [], expiresAt: exp };
+      return { token, clientId: 'x', scopes: ['notes:read'], expiresAt: exp };
     },
   };
   function issue() {
@@ -127,8 +131,13 @@ export async function startMockUpstream(opts: { oauth?: boolean; requireHeader?:
   const { server, url } = await listen(app);
   base = url;
   if (opts.oauth) {
+    app.use('/.well-known/oauth-protected-resource', (_req, res) => void res.status(404).end());
+    app.get('/custom/resource-metadata', (_req, res) => {
+      stats.metadataHits++;
+      res.json({ resource: `${base}/mcp`, authorization_servers: [base], scopes_supported: ['notes:read'] });
+    });
     app.use(mcpAuthRouter({ provider, issuerUrl: new URL(base), resourceServerUrl: new URL(`${base}/mcp`) }));
-    app.post('/mcp', express.json(), requireBearerAuth({ verifier: provider, resourceMetadataUrl: getOAuthProtectedResourceMetadataUrl(new URL(`${base}/mcp`)) }), mcpHandler);
+    app.post('/mcp', express.json(), requireBearerAuth({ verifier: provider, requiredScopes: ['notes:read'], resourceMetadataUrl: `${base}/custom/resource-metadata` }), mcpHandler);
   } else {
     app.post('/mcp', express.json(), mcpHandler);
   }
@@ -141,8 +150,13 @@ export async function startMockUpstream(opts: { oauth?: boolean; requireHeader?:
     oauth: {
       get issued() { return stats.issued; },
       get refreshed() { return stats.refreshed; },
+      get metadataHits() { return stats.metadataHits; },
       expireAll() {
         for (const k of tokens.keys()) tokens.set(k, 0);
+      },
+      revokeAll() {
+        tokens.clear();
+        refreshTokens.clear();
       },
     },
     close: () => new Promise<void>((r) => { server.closeAllConnections(); server.close(() => r()); }),
