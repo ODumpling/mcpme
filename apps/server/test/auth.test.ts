@@ -90,7 +90,7 @@ describe('MCPME login for MCP clients', () => {
     expect(provider.saved?.access_token).toMatch(/^mcpme_at_/);
     const client = new Client({ name: 't', version: '1' });
     await client.connect(new StreamableHTTPClientTransport(mcpUrl, { authProvider: provider }));
-    expect(await client.listTools()).toEqual({ tools: [] });
+    expect((await client.listTools()).tools.map((t) => t.name)).toEqual(['mcpme__import_servers']);
     await client.close();
 
     // The code is single-use.
@@ -124,7 +124,7 @@ describe('MCPME login for MCP clients', () => {
   it('accepts personal access tokens, and stops accepting them once deleted', async () => {
     const created = await h.api('/api/tokens', { body: { name: 'cursor' } });
     const client = await h.mcpClient(created.body.token);
-    expect(await client.listTools()).toEqual({ tools: [] });
+    expect((await client.listTools()).tools.map((t) => t.name)).toEqual(['mcpme__import_servers']);
     await h.api(`/api/tokens/${created.body.record.id}`, { method: 'DELETE' });
     await expect(h.mcpClient(created.body.token)).rejects.toThrow();
   });

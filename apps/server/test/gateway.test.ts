@@ -36,7 +36,7 @@ describe('gateway', () => {
   it('combines tools from every server under namespaced names', async () => {
     const client = await h.mcpClient();
     const names = (await client.listTools()).tools.map((t) => t.name).sort();
-    expect(names).toEqual(['alpha__delete_everything', 'alpha__echo', 'alpha__link', 'keyed__delete_everything', 'keyed__echo', 'keyed__link', 'local__add_tool', 'local__whoami']);
+    expect(names).toEqual(['alpha__delete_everything', 'alpha__echo', 'alpha__link', 'keyed__delete_everything', 'keyed__echo', 'keyed__link', 'local__add_tool', 'local__whoami', 'mcpme__import_servers']);
   });
 
   it('forwards tool calls to the right server, with stored headers and env', async () => {
@@ -142,5 +142,6 @@ describe('gateway', () => {
     expect((await h.api('/api/servers', { body: { slug: 'Bad_Slug', name: 'x', transport: 'http', url: 'http://x', authType: 'none' } })).status).toBe(400);
     expect((await h.api('/api/servers', { body: { slug: 'nourl', name: 'x', transport: 'http', authType: 'none' } })).status).toBe(400);
     expect((await h.api('/api/servers', { body: { slug: 'alpha', name: 'x', transport: 'http', url: 'http://x', authType: 'none' } })).status).toBe(409);
+    expect((await h.api('/api/servers', { body: { slug: 'mcpme', name: 'x', transport: 'http', url: 'http://x', authType: 'none' } })).status).toBe(400);
   });
 });

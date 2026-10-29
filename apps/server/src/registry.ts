@@ -233,20 +233,33 @@ export class Registry extends EventEmitter<{ change: [] }> {
  * metadata somewhere other than the well-known default, and name the scopes.
  */
 async function authChallenge(transport: string, url: string, headers: Record<string, string>): Promise<{ resourceMetadataUrl?: URL; scope?: string }> {
+  const res = await probe(transport, url, headers);
+  if (res?.status !== 401) return {};
+  const { resourceMetadataUrl, scope } = extractWWWAuthenticateParams(res);
+  return { resourceMetadataUrl, scope };
+}
+
+/** True if the server turns away a request without credentials, i.e. it wants an OAuth sign-in. */
+export async function wantsSignIn(transport: string, url: string, headers: Record<string, string>): Promise<boolean> {
+  return (await probe(transport, url, headers))?.status === 401;
+}
+
+/** Opens a connection the way an MCP client would and returns the first response, or undefined if unreachable. */
+async function probe(transport: string, url: string, headers: Record<string, string>): Promise<Response | undefined> {
   try {
+    const signal = AbortSignal.timeout(10_000);
     const res =
       transport === 'sse'
-        ? await fetch(url, { headers: { ...headers, accept: 'text/event-stream' } })
+        ? await fetch(url, { headers: { ...headers, accept: 'text/event-stream' }, signal })
         : await fetch(url, {
             method: 'POST',
             headers: { ...headers, 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
             body: JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'initialize', params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'mcpme', version: '0.1.0' } } }),
+            signal,
           });
     void res.body?.cancel();
-    if (res.status !== 401) return {};
-    const { resourceMetadataUrl, scope } = extractWWWAuthenticateParams(res);
-    return { resourceMetadataUrl, scope };
+    return res;
   } catch {
-    return {};
+    return undefined;
   }
 }

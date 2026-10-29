@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import express, { type NextFunction, type Request, type Response, type Router } from 'express';
 import { z } from 'zod';
 import type { Audit } from './audit.ts';
@@ -8,40 +8,9 @@ import { hashToken, randomToken } from './crypto.ts';
 import type { Db } from './db/index.ts';
 import { personalAccessTokens } from './db/schema.ts';
 import type { Registry, ServerInput } from './registry.ts';
+import { checkTransport, createServer, updateServer } from './serverSchema.ts';
 import type { Upstream } from './upstream/upstream.ts';
 
-const slug = z
-  .string()
-  .regex(/^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/, 'Use 1–32 lowercase letters, numbers and dashes')
-  .refine((s) => !s.includes('--'), 'Use single dashes');
-const httpUrl = z.string().url().refine((u) => /^https?:$/.test(new URL(u).protocol), 'Use an http(s) URL');
-const record = z.record(z.string().min(1), z.string());
-
-const serverBase = z.object({
-  slug,
-  name: z.string().trim().min(1).max(80),
-  transport: z.enum(['http', 'sse', 'stdio']),
-  url: httpUrl.nullish(),
-  command: z.string().trim().min(1).nullish(),
-  args: z.array(z.string()).optional(),
-  env: record.optional(),
-  authType: z.enum(['none', 'headers', 'oauth']),
-  headers: record.optional(),
-  enabled: z.boolean().optional(),
-  newItemsEnabled: z.boolean().optional(),
-});
-
-function checkTransport(s: Partial<z.infer<typeof serverBase>>, ctx: z.RefinementCtx) {
-  if (s.transport === 'stdio') {
-    if (!s.command) ctx.addIssue({ code: 'custom', path: ['command'], message: 'Command is required for stdio servers' });
-    if (s.authType === 'oauth') ctx.addIssue({ code: 'custom', path: ['authType'], message: 'stdio servers use env vars, not OAuth' });
-  } else if (s.transport && !s.url) {
-    ctx.addIssue({ code: 'custom', path: ['url'], message: 'URL is required for HTTP and SSE servers' });
-  }
-}
-
-const createServer = serverBase.superRefine(checkTransport);
-const updateServer = serverBase.partial();
 const toggles = z.object({
   items: z.array(z.object({ kind: z.enum(['tool', 'prompt', 'resource', 'resource_template']), name: z.string().min(1), enabled: z.boolean() })).max(1000),
 });
@@ -64,6 +33,15 @@ export function apiRouter(deps: { db: Db; owners: Owners; registry: Registry; au
 
   const wrap = (fn: (req: Authed, res: Response) => Promise<unknown>) => (req: Request, res: Response, next: NextFunction) =>
     fn(req as Authed, res).catch(next);
+
+  // No sign-in needed, for container health checks and uptime monitors. Reveals nothing about the servers behind MCPME.
+  api.get('/health', wrap(async (_req, res) => {
+    const database = await db.execute(sql`select 1`).then(
+      () => 'ok' as const,
+      () => 'error' as const,
+    );
+    res.set('Cache-Control', 'no-store').status(database === 'ok' ? 200 : 503).json({ status: database, database, uptimeSeconds: Math.round(process.uptime()) });
+  }));
 
   api.get('/state', wrap(async (req, res) => {
     const user = await owners.sessionUser(req);

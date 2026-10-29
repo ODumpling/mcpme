@@ -22,7 +22,7 @@ describe('upstream OAuth: sign in once, every client gets access', () => {
 
   it('offers a sign-in link until the server is connected', async () => {
     const client = await h.mcpClient();
-    expect((await client.listTools()).tools.map((t) => t.name)).toEqual(['secure__authorize']);
+    expect((await client.listTools()).tools.map((t) => t.name)).toEqual(['secure__authorize', 'mcpme__import_servers']);
     const result = await client.callTool({ name: 'secure__authorize', arguments: {} });
     expect(result.isError).toBe(true);
     expect((result.content as any)[0].text).toContain(`${h.base}/connect/secure`);
@@ -88,13 +88,13 @@ describe('upstream OAuth: sign in once, every client gets access', () => {
     expect(result.isError).toBe(true);
     expect((result.content as any)[0].text).toContain(`${h.base}/connect/secure`);
     await waitFor(() => notified > 0);
-    expect((await client.listTools()).tools.map((t) => t.name)).toEqual(['secure__authorize']);
+    expect((await client.listTools()).tools.map((t) => t.name)).toEqual(['secure__authorize', 'mcpme__import_servers']);
     expect((await h.api(`/api/servers/${serverId}`)).body.server.status).toBe('needs_auth');
   });
 
   it('can forget the credential', async () => {
     await h.api(`/api/servers/${serverId}/disconnect`, { body: {} });
     const client = await h.mcpClient();
-    expect((await client.listTools()).tools.map((t) => t.name)).toEqual(['secure__authorize']);
+    expect((await client.listTools()).tools.map((t) => t.name)).toEqual(['secure__authorize', 'mcpme__import_servers']);
   });
 });
