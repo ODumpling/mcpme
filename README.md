@@ -40,6 +40,17 @@ stdio servers run inside the MCPME container. The image includes `node`/`npx`, `
 
 Create an application from this repo with the Dockerfile build pack, expose port 3000, attach a persistent volume at `/data`, and set `MCPME_PUBLIC_URL` to the app's domain and `MCPME_SECRET_KEY`. Optionally add a Postgres database and set `DATABASE_URL`.
 
+### Tailnet only
+
+`compose.tailscale.yaml` runs MCPME with a Tailscale sidecar that serves it at `https://mcpme.<tailnet>.ts.net`. No port is published, so only devices on your tailnet can reach it. Turn on MagicDNS and HTTPS certificates for the tailnet, then:
+
+```bash
+MCPME_PUBLIC_URL=https://mcpme.<tailnet>.ts.net TS_AUTHKEY=tskey-auth-... \
+  docker compose -f compose.tailscale.yaml up -d
+```
+
+The sidecar's login is kept in the `tailscale-state` volume, so `TS_AUTHKEY` is only needed the first time. In Coolify, use the Docker Compose build pack with `compose.tailscale.yaml` and set no domain. Cloud-hosted clients such as claude.ai connectors can't reach a tailnet-only instance.
+
 ## Connect a client
 
 Use `https://<your-host>/mcp`. For Claude Code:

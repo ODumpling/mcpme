@@ -1,0 +1,28 @@
+# MCPME reachable only on your tailnet, at https://mcpme.<tailnet>.ts.net.
+# Needs MagicDNS and HTTPS certificates turned on for the tailnet.
+services:
+  mcpme:
+    build: .
+    restart: unless-stopped
+    environment:
+      MCPME_PUBLIC_URL: ${MCPME_PUBLIC_URL:?}
+      MCPME_SECRET_KEY: ${MCPME_SECRET_KEY:-}
+      DATABASE_URL: ${DATABASE_URL:-}
+    volumes:
+      - mcpme-data:/data
+
+  tailscale:
+    build: ./tailscale
+    restart: unless-stopped
+    environment:
+      TS_HOSTNAME: mcpme
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "true"
+      TS_SERVE_CONFIG: /config/serve.json
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+
+volumes:
+  mcpme-data:
+  tailscale-state:
