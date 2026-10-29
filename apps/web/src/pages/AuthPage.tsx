@@ -1,10 +1,12 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { api } from '../api.ts';
+import { AuthBackdrop } from '../AuthBackdrop.tsx';
 import { Banner, Field } from '../ui.tsx';
 
 export function AuthPage({ setup, onDone }: { setup: boolean; onDone: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const cardRef = useRef<HTMLFormElement>(null);
 
   const submit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -23,7 +25,8 @@ export function AuthPage({ setup, onDone }: { setup: boolean; onDone: () => void
 
   return (
     <div className="auth">
-      <form className="card auth-card" onSubmit={submit}>
+      <AuthBackdrop cardRef={cardRef} />
+      <form ref={cardRef} className="card auth-card" onSubmit={submit}>
         <div className="brand">
           <img src="/icon.svg" alt="" width={28} height={28} />
           MCPME
