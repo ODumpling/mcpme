@@ -29,7 +29,7 @@ export function ServersPage({ mcpUrl }: { mcpUrl: string }) {
         <CopyField label="MCP URL" value={mcpUrl} />
         <details>
           <summary>Claude Code command</summary>
-          <CopyField label="Claude Code command" value={`claude mcp add --transport http mcpme ${mcpUrl}`} />
+          <CopyField label="Claude Code command" value={`claude mcp add --scope user --transport http mcpme ${mcpUrl}`} />
         </details>
       </section>
 
