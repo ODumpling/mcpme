@@ -8,7 +8,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { createApp, type App } from '../src/app.ts';
 
-export const OWNER = { email: 'owner@example.com', password: 'correct horse battery' };
+export const OWNER = { name: 'Owner', email: 'owner@example.com', password: 'correct horse battery' };
 
 export interface Harness {
   app: App;
@@ -47,7 +47,7 @@ export async function startHarness(): Promise<Harness> {
     return { status: res.status, body: text ? JSON.parse(text) : null };
   };
 
-  await api('/api/setup', { body: { ...OWNER, setupCode: app.owners.setupCode } });
+  await api('/api/setup', { body: OWNER });
   const { body } = await api('/api/tokens', { body: { name: 'tests' } });
 
   const clients: Client[] = [];

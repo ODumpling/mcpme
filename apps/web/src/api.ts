@@ -53,7 +53,7 @@ export interface AuditEntry {
 
 export interface AppState {
   setupRequired: boolean;
-  user: { id: string; email: string } | null;
+  user: { id: string; name: string; email: string } | null;
   mcpUrl: string;
 }
 

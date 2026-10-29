@@ -24,7 +24,7 @@ docker run -p 3000:3000 -v mcpme-data:/data \
   mcpme
 ```
 
-On first start the logs print a **setup code**. Open the public URL, enter it and create your account. The code stops a stranger from claiming a fresh instance.
+On first start, open the public URL and create your account with your name, email and password. Whoever reaches a fresh instance first claims it, so set it up right after deploying (or keep it private, like the tailnet-only setup below).
 
 | Variable | Default | |
 |---|---|---|

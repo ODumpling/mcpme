@@ -10,7 +10,7 @@ const server = app.express.listen(config.port, async () => {
   console.log(`MCPME listening on :${config.port}`);
   console.log(`MCP endpoint: ${app.mcpUrl.href}`);
   if (!(await app.owners.hasOwner())) {
-    console.log(`First run: open ${config.publicUrl.href} and enter setup code ${app.owners.setupCode}`);
+    console.log(`First run: open ${config.publicUrl.href} to create your account`);
   }
 });
 

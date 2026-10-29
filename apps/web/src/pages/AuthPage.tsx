@@ -33,8 +33,8 @@ export function AuthPage({ setup, onDone }: { setup: boolean; onDone: () => void
           {setup ? 'This account is the only one that can use your MCP servers through MCPME.' : 'Sign in to manage your MCP servers.'}
         </p>
         {setup && (
-          <Field label="Setup code" htmlFor="setupCode" hint="Printed in the MCPME server logs on first start.">
-            <input id="setupCode" name="setupCode" required autoComplete="off" spellCheck={false} />
+          <Field label="Name" htmlFor="name">
+            <input id="name" name="name" required autoComplete="name" autoFocus />
           </Field>
         )}
         <Field label="Email" htmlFor="email">
