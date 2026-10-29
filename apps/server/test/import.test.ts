@@ -71,9 +71,11 @@ describe('import_servers tool', () => {
     expect((await h.api('/api/audit')).body.entries.some((e: any) => e.serverSlug === 'mcpme' && e.target === 'mcpme__import_servers')).toBe(true);
   });
 
-  it('reads VS Code configs', async () => {
+  it('reads VS Code configs and flags URL placeholders', async () => {
     const { by } = await importServers({ servers: { 'vs-sse': { type: 'sse', url: `${plain.url}/sse` } } }, true);
-    expect(by['vs-sse']).toMatchObject({ slug: 'vs-sse', transport: 'sse' });
+    expect(by['vs-sse']).toMatchObject({ slug: 'vs-sse', transport: 'sse', placeholders: [] });
+    const templated = await importServers({ mcpServers: { tpl: { url: `${plain.url}/\${SERVER_ID}` } } }, true);
+    expect(templated.by.tpl).toMatchObject({ placeholders: ['url'] });
   });
 
   it('reports configs it can not read', async () => {

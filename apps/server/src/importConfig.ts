@@ -151,6 +151,8 @@ function toServer(key: string, raw: unknown): FoundServer {
     for (const a of [command, ...args]) if (/\$\{[^}]+\}/.test(a)) found.placeholders.push('args');
   } else if (!url) {
     return { ...found, reason: 'No URL' };
+  } else if (/\$\{[^}]+\}/.test(url)) {
+    found.placeholders.push('url');
   }
 
   const slug = slugify(key);
