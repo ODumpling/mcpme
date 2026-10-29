@@ -58,7 +58,7 @@ The sidecar's login is kept in the `tailscale-state` volume, so `TS_AUTHKEY` is 
 Use `https://<your-host>/mcp`. For Claude Code:
 
 ```bash
-claude mcp add --transport http mcpme https://<your-host>/mcp
+claude mcp add --scope user --transport http mcpme https://<your-host>/mcp
 ```
 
 The client opens MCPME's sign-in page in your browser the first time. Clients without OAuth support can send `Authorization: Bearer <token>` with a token from the **Tokens** page.
