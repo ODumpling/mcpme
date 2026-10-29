@@ -22,13 +22,16 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import type { Audit } from './audit.ts';
 import type { McpmeAuthExtra } from './auth/oauthServer.ts';
+import { importServers, type ImportedServer } from './importConfig.ts';
 import type { Registry } from './registry.ts';
+import { RESERVED_SLUG } from './serverSchema.ts';
 import { errorMessage, type Upstream } from './upstream/upstream.ts';
 
 /** `<slug>__<name>`. Slugs can't contain `_`, so the first `__` is always the separator. */
 const SEP = '__';
 const RESOURCE_SCHEME = 'mcpme://';
 const AUTHORIZE_TOOL = 'authorize';
+const IMPORT_TOOL = `${RESERVED_SLUG}${SEP}import_servers`;
 const CALL_TIMEOUT_MS = 5 * 60_000;
 const SESSION_IDLE_MS = 24 * 60 * 60_000;
 
@@ -158,18 +161,20 @@ export class Gateway {
     return up?.config.enabled ? { up, name: parts!.name } : undefined;
   }
 
-  private async timed<T>(userId: string, up: Upstream | undefined, method: string, target: string, run: () => Promise<T>): Promise<T> {
+  /** `up` is the upstream the request is for, or the slug to log for MCPME's own tools. */
+  private async timed<T>(userId: string, up: Upstream | string | undefined, method: string, target: string, run: () => Promise<T>): Promise<T> {
     const started = Date.now();
+    const serverSlug = typeof up === 'string' ? up : (up?.config.slug ?? '-');
     try {
       const out = await run();
       const isError = (out as CallToolResult | undefined)?.isError === true;
-      this.audit.record({ userId, serverSlug: up?.config.slug ?? '-', method, target, status: isError ? 'error' : 'ok', durationMs: Date.now() - started });
+      this.audit.record({ userId, serverSlug, method, target, status: isError ? 'error' : 'ok', durationMs: Date.now() - started });
       return out;
     } catch (err) {
       const blocked = err instanceof NotExposedError;
       this.audit.record({
         userId,
-        serverSlug: up?.config.slug ?? '-',
+        serverSlug,
         method,
         target,
         status: blocked ? 'blocked' : 'error',
@@ -221,10 +226,14 @@ export class Gateway {
           if (this.registry.isEnabled(up, 'tool', t.name)) tools.push({ ...t, name: namespaced(up.config.slug, t.name) });
         }
       }
+      tools.push(importTool);
       return { tools };
     });
 
     server.setRequestHandler(CallToolRequestSchema, async (req) => {
+      if (req.params.name === IMPORT_TOOL) {
+        return this.timed(userId, RESERVED_SLUG, 'tools/call', req.params.name, () => this.importTool(userId, req.params.arguments ?? {}));
+      }
       const target = this.resolve(req.params.name);
       return this.timed(userId, target?.up, 'tools/call', req.params.name, async () => {
         if (!target) throw new NotExposedError(`Unknown tool: ${req.params.name}`);
@@ -308,6 +317,30 @@ export class Gateway {
     return server;
   }
 
+  private async importTool(userId: string, args: Record<string, unknown>): Promise<CallToolResult> {
+    const dryRun = args.dryRun === true;
+    let servers: ImportedServer[];
+    try {
+      servers = await importServers(this.registry, { ownerId: userId, mcpUrl: new URL('/mcp', this.publicUrl), config: args.config, dryRun });
+    } catch (err) {
+      return { isError: true, content: [{ type: 'text', text: errorMessage(err) }] };
+    }
+    const adding = servers.filter((s) => s.outcome === 'new' || s.outcome === 'created');
+    const lines = servers.map((s) => {
+      const label = s.slug && s.slug !== s.key ? `${s.key} (as ${s.slug})` : s.key;
+      const notes = s.reason ? [s.reason] : [];
+      if (adding.includes(s)) {
+        if (s.authType === 'oauth') notes.push(`Needs a browser sign-in: ${new URL(`/connect/${s.slug}`, this.publicUrl).href}`);
+        if (s.placeholders.length) notes.push(`${s.placeholders.join(', ')} use \${…} placeholders MCPME can't fill in; set the real values in the MCPME dashboard`);
+      }
+      return [`- ${label}: ${IMPORT_OUTCOMES[s.outcome]}`, ...notes].join('. ');
+    });
+    const head = dryRun
+      ? `Would add ${adding.length} of ${servers.length} servers. Call again without dryRun to import them.`
+      : `Added ${adding.length} of ${servers.length} servers. Their tools appear as <slug>__<tool>; to avoid loading them twice, remove them from this client's own config.`;
+    return { content: [{ type: 'text', text: [head, ...lines].join('\n') }], structuredContent: { servers } };
+  }
+
   /** A saved or listed resource uses its own switch; otherwise the first matching template's; otherwise the server default. */
   private resourceReadable(up: Upstream, uri: string): boolean {
     if (this.registry.hasToggle(up, 'resource', uri) || up.lists.resources.some((r) => r.uri === uri)) {
@@ -324,6 +357,40 @@ export class Gateway {
     return up.config.newItemsEnabled;
   }
 }
+
+const importTool: Tool = {
+  name: IMPORT_TOOL,
+  title: 'Import MCP servers',
+  description: [
+    "Adds the MCP servers from your MCP client's config to MCPME, so their tools are available here.",
+    'Read the config of the client you are running in and pass its server entries as `config`:',
+    'Claude Code: `mcpServers` and `projects.<path>.mcpServers` from ~/.claude.json (pass only those keys; the file is large), plus .mcp.json in the project.',
+    'Claude Desktop: claude_desktop_config.json. Cursor: ~/.cursor/mcp.json. VS Code: .vscode/mcp.json. Windsurf: ~/.codeium/windsurf/mcp_config.json.',
+    'Call with dryRun: true first and show the user what will be added. Servers whose name is already used are skipped.',
+    'Headers and env vars are stored encrypted. Local (stdio) commands run on the MCPME host, not this machine.',
+  ].join(' '),
+  inputSchema: {
+    type: 'object',
+    properties: {
+      config: {
+        type: 'object',
+        description: 'The client config: an object with `mcpServers` (Claude Code, Claude Desktop, Cursor, Windsurf) or `servers` (VS Code), keyed by server name.',
+        additionalProperties: true,
+      },
+      dryRun: { type: 'boolean', description: 'Only report what would be imported.' },
+    },
+    required: ['config'],
+  },
+  annotations: { title: 'Import MCP servers', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+};
+
+const IMPORT_OUTCOMES: Record<ImportedServer['outcome'], string> = {
+  new: 'will be added',
+  created: 'added',
+  exists: 'skipped',
+  invalid: "can't import",
+  skipped: 'skipped',
+};
 
 /** Rewrites resource URIs inside tool/prompt content so clients can read them back through MCPME. */
 function wrapContentUris<T extends { type: string }>(slug: string, content: T): T {

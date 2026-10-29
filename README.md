@@ -61,6 +61,8 @@ claude mcp add --transport http mcpme https://<your-host>/mcp
 
 The client opens MCPME's sign-in page in your browser the first time. Clients without OAuth support can send `Authorization: Bearer <token>` with a token from the **Tokens** page.
 
+To move the servers your client already uses into MCPME, ask it to: MCPME has one tool of its own, `mcpme__import_servers`, which takes the client's MCP config (`mcpServers` from `~/.claude.json` or `.mcp.json`, `~/.cursor/mcp.json`, `.vscode/mcp.json`, ...) and adds every server in it. For example, tell Claude Code "import my MCP servers into mcpme". Headers and env vars are stored encrypted, and HTTP servers that answer with a 401 are set up for OAuth sign-in. `${VAR}` placeholders can't be resolved, so set those values in the dashboard afterwards. Local commands run inside the MCPME container, so they must work there. The slug `mcpme` is reserved for this tool.
+
 If a server needs its own sign-in, it shows up as a single `<server>__authorize` tool until you connect it. Calling it returns a link (clients that support URL elicitation open it directly). You can also sign in from the server's page in the dashboard.
 
 ## Develop
